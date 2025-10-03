@@ -156,12 +156,16 @@ const CashOutDialog: React.FC<CashOutDialogProps> = ({ open, onOpenChange }) => 
       }
       
       // Add source information to the message
-      successMessage += ' (Processed locally)';
+      if (result.isReal && result.source === 'cashout_server') {
+        successMessage += ' 💰 REAL PAYMENT PROCESSED';
+      } else {
+        successMessage += ' (Demo Mode - Processed locally)';
+      }
       
       setSuccess(successMessage);
       
       toast({
-        title: "Payment Processed",
+        title: result.isReal ? "💰 Real Payment Processed" : "Payment Processed (Demo)",
         description: successMessage,
       });
     } catch (error) {

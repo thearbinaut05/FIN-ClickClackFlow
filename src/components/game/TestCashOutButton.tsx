@@ -43,11 +43,20 @@ const TestCashOutButton: React.FC = () => {
       if (result.success) {
         console.log("Test cashout result:", result);
         
-        const sourceMessage = 'via Local Storage';
+        // Determine source message based on payment type
+        let sourceMessage = 'via Local Storage (Demo Mode)';
+        let titlePrefix = '✅';
+        
+        if (result.isReal && result.source === 'cashout_server') {
+          sourceMessage = 'via Real Payment Server (REAL MONEY)';
+          titlePrefix = '💰';
+        } else if (result.source === 'demo_mode') {
+          sourceMessage = 'via Local Storage (Demo Mode)';
+        }
         
         toast({
-          title: "✅ System Test Successful",
-          description: `Cashout system is working properly ${sourceMessage}! Transaction ID: ${result.details?.id || result.details?.paymentIntentId || 'n/a'}`,
+          title: `${titlePrefix} System Test Successful`,
+          description: `Cashout system working ${sourceMessage}! Transaction ID: ${result.transaction_id || result.details?.id || result.details?.paymentIntentId || 'n/a'}`,
         });
       } else {
         throw new Error(result.error || 'Cashout test failed');

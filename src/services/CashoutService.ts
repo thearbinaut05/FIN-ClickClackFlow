@@ -1,6 +1,7 @@
 /**
- * Cashout Service with Lovable Cloud Integration
- * Handles cashout requests using Lovable Cloud backend instead of Supabase
+ * Cashout Service with Real Payment Integration
+ * Handles cashout requests using real Stripe payments via cashout-server.js
+ * Falls back to local demo mode if server unavailable
  */
 
 import { LovableCloudService } from './LovableCloudService';
@@ -20,16 +21,22 @@ interface CashoutResponse {
   message?: string;
   isReal?: boolean;
   autonomous_revenue_balance?: number;
-  source?: 'lovable_cloud' | 'demo_mode' | 'fallback';
+  source?: 'cashout_server' | 'lovable_cloud' | 'demo_mode' | 'fallback';
   transaction_id?: string;
 }
 
 export class CashoutService {
   private static instance: CashoutService;
   private lovableCloud: LovableCloudService;
+  private cashoutServerUrl: string;
+  private useRealPayments: boolean;
 
   constructor() {
     this.lovableCloud = LovableCloudService.getInstance();
+    // Get cashout server URL from environment or default to localhost:4000
+    this.cashoutServerUrl = import.meta.env.VITE_CASHOUT_SERVER_URL || 'http://localhost:4000';
+    // Enable real payments by default (can be disabled via env var)
+    this.useRealPayments = import.meta.env.VITE_USE_REAL_PAYMENTS !== 'false';
   }
 
   static getInstance(): CashoutService {
@@ -40,11 +47,88 @@ export class CashoutService {
   }
 
   /**
-   * Process cashout using local-only system
-   * No external services required
+   * Process cashout using real payment server or fallback to demo mode
    */
   async processCashout(request: CashoutRequest): Promise<CashoutResponse> {
-    console.log('CashoutService: Processing cashout locally', request);
+    console.log('CashoutService: Processing cashout', { 
+      useRealPayments: this.useRealPayments,
+      cashoutServerUrl: this.cashoutServerUrl,
+      request 
+    });
+
+    // Try real payment server first if enabled
+    if (this.useRealPayments) {
+      try {
+        const realPaymentResult = await this.processRealPayment(request);
+        if (realPaymentResult.success) {
+          return realPaymentResult;
+        }
+        console.warn('Real payment failed, falling back to demo mode:', realPaymentResult.error);
+      } catch (error) {
+        console.warn('Cashout server unavailable, falling back to demo mode:', error);
+      }
+    }
+
+    // Fallback to demo mode
+    return this.processDemoPayment(request);
+  }
+
+  /**
+   * Process real payment via cashout server
+   */
+  private async processRealPayment(request: CashoutRequest): Promise<CashoutResponse> {
+    console.log('CashoutService: Attempting real payment via cashout server');
+
+    try {
+      const cashValue = Math.max(1, request.coins / 100);
+      
+      const response = await fetch(`${this.cashoutServerUrl}/cashout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: request.userId,
+          coins: request.coins,
+          payoutType: request.payoutType,
+          email: request.email,
+          metadata: request.metadata
+        })
+      });
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log('CashoutService: Real payment successful', result);
+        return {
+          success: true,
+          source: 'cashout_server',
+          isReal: true,
+          transaction_id: result.details?.payoutId || result.details?.transferId || result.details?.paymentIntentId,
+          message: `Successfully processed REAL $${cashValue.toFixed(2)} payment to ${request.email}`,
+          details: {
+            ...result.details,
+            amount: Math.round(cashValue * 100),
+            currency: 'usd',
+            status: 'completed',
+            payment_method: request.payoutType,
+            real_payment: true
+          }
+        };
+      }
+
+      throw new Error(result.error || 'Real payment processing failed');
+    } catch (error) {
+      console.error('CashoutService: Real payment failed', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process demo payment using local storage (fallback)
+   */
+  private async processDemoPayment(request: CashoutRequest): Promise<CashoutResponse> {
+    console.log('CashoutService: Processing demo payment locally');
 
     try {
       const cashValue = Math.max(1, request.coins / 100);
@@ -71,20 +155,21 @@ export class CashoutService {
           isReal: false,
           transaction_id: result.transaction_id,
           autonomous_revenue_balance: Math.max(0, revenueBalance - cashValue),
-          message: `Successfully processed $${cashValue.toFixed(2)} cashout to ${request.email}`,
+          message: `Successfully processed DEMO $${cashValue.toFixed(2)} cashout to ${request.email}`,
           details: {
             id: result.transaction_id,
             amount: Math.round(cashValue * 100),
             currency: 'usd',
             status: 'completed',
-            payment_method: request.payoutType
+            payment_method: request.payoutType,
+            demo_mode: true
           }
         };
       }
 
       throw new Error(result.error || 'Cashout failed');
     } catch (error) {
-      console.error('CashoutService: Cashout failed', error);
+      console.error('CashoutService: Demo payment failed', error);
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Cashout processing failed',
@@ -146,19 +231,25 @@ export class CashoutService {
   }
 
   /**
-   * Test the cashout service with a small test request (REAL MONEY)
+   * Test the cashout service with a small test request
+   * Will use REAL MONEY if cashout server is available and configured
    */
   async testCashout(email: string = 'test@example.com', coins: number = 100): Promise<CashoutResponse> {
+    console.log('CashoutService: Running test cashout', {
+      useRealPayments: this.useRealPayments,
+      cashoutServerUrl: this.cashoutServerUrl
+    });
+    
     return this.processCashout({
       userId: `test_${Date.now()}`,
       coins: Math.max(100, coins),
-      payoutType: 'standard',
+      payoutType: 'email', // Use email payout for testing (safest)
       email,
       metadata: {
         gameSession: Date.now(),
         coinCount: coins,
         testRun: true,
-        realMoney: true // This is a real money test
+        realMoney: this.useRealPayments
       }
     });
   }
