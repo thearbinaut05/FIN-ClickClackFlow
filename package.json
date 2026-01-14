@@ -52,7 +52,7 @@
     "date-fns": "^3.6.0",
     "dotenv": "^16.6.1",
     "embla-carousel-react": "^8.3.0",
-    "express": "^5.1.0",
+    "express": "^5.2.1",
     "express-rate-limit": "^8.0.1",
     "framer-motion": "^12.11.4",
     "helmet": "^8.1.0",
