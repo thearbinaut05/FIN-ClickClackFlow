@@ -1,157 +1,109 @@
 /**
- * Real Cashout Service - Handles actual USD transactions via Stripe
- * NO MOCKS - REAL MONEY ONLY
+ * RealCashoutService — prefers local cashout-server (no Supabase required).
+ * Falls back to Supabase edge function only if VITE_USE_SUPABASE_CASHOUT=true.
  */
 
-import { supabase } from '@/integrations/supabase/client';
+const CASHOUT_SERVER = import.meta.env.VITE_CASHOUT_SERVER_URL || 'http://localhost:4000';
+const USE_SUPABASE = import.meta.env.VITE_USE_SUPABASE_CASHOUT === 'true';
 
-interface RealCashoutRequest {
+export interface CashoutRequest {
   userId: string;
-  amountUSD: number;
   coins: number;
-  payoutType: 'standard' | 'virtual-card' | 'bank-card';
-  email: string;
-  metadata?: Record<string, any>;
+  amountUSD: number;
+  payoutType?: 'instant_card' | 'bank_account' | 'email';
+  email?: string;
+  accountId?: string;
+  metadata?: Record<string, unknown>;
 }
 
-interface RealCashoutResponse {
+export interface CashoutResponse {
   success: boolean;
   transactionId?: string;
   stripeTransferId?: string;
-  error?: string;
   message?: string;
+  error?: string;
+  details?: unknown;
 }
 
-export class RealCashoutService {
-  private static instance: RealCashoutService;
+async function cashoutViaLocalServer(request: CashoutRequest): Promise<CashoutResponse> {
+  const res = await fetch(`${CASHOUT_SERVER}/cashout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: request.userId,
+      coins: request.coins,
+      payoutType: request.payoutType || 'email',
+      email: request.email,
+      accountId: request.accountId,
+      metadata: request.metadata,
+    }),
+  });
 
-  static getInstance(): RealCashoutService {
-    if (!RealCashoutService.instance) {
-      RealCashoutService.instance = new RealCashoutService();
-    }
-    return RealCashoutService.instance;
+  const data = await res.json();
+
+  if (!res.ok || !data.success) {
+    return {
+      success: false,
+      error: data.error || `HTTP ${res.status}`,
+    };
   }
 
-  /**
-   * Process real cashout via Stripe
-   */
-  async processCashout(request: RealCashoutRequest): Promise<RealCashoutResponse> {
-    try {
-      console.log('🚀 PROCESSING REAL CASHOUT:', request);
+  return {
+    success: true,
+    transactionId:
+      data.details?.payoutId ||
+      data.details?.transferId ||
+      data.details?.paymentIntentId ||
+      `local_${Date.now()}`,
+    stripeTransferId: data.details?.transferId || data.details?.payoutId,
+    message: data.details?.message || `Successfully cashed out $${request.amountUSD.toFixed(2)}`,
+    details: data.details,
+  };
+}
 
-      // Call real Supabase edge function for cashout
-      const { data, error } = await supabase.functions.invoke('cashout', {
-        body: {
-          userId: request.userId,
-          coins: request.coins,
-          payoutType: request.payoutType,
-          email: request.email,
-          metadata: request.metadata
-        }
-      });
+async function cashoutViaSupabase(request: CashoutRequest): Promise<CashoutResponse> {
+  // Dynamic import so the app still builds if Supabase client is misconfigured
+  const { supabase } = await import('@/integrations/supabase/client');
+  const { data, error } = await supabase.functions.invoke('cashout', {
+    body: {
+      userId: request.userId,
+      coins: request.coins,
+      payoutType: request.payoutType,
+      email: request.email,
+      metadata: request.metadata,
+    },
+  });
 
-      if (error) {
-        console.error('❌ Cashout error:', error);
-        return {
-          success: false,
-          error: error.message || 'Cashout failed'
-        };
-      }
-
-      console.log('✅ REAL CASHOUT SUCCESS:', data);
-
-      return {
-        success: true,
-        transactionId: data.transaction_id,
-        stripeTransferId: data.stripe_transfer_id || data.stripe_payment_intent_id,
-        message: `Successfully cashed out $${request.amountUSD.toFixed(2)}`
-      };
-    } catch (error) {
-      console.error('❌ Real cashout service error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
+  if (error) {
+    return { success: false, error: error.message || 'Cashout failed' };
   }
 
-  /**
-   * Get user's cashout balance from user_earnings table
-   */
-  async getUserBalance(userId: string): Promise<number> {
-    try {
-      const { data, error } = await supabase
-        .rpc('get_user_cashout_balance', { p_user_id: userId });
+  return {
+    success: true,
+    transactionId: data.transaction_id,
+    stripeTransferId: data.stripe_transfer_id || data.stripe_payment_intent_id,
+    message: `Successfully cashed out $${request.amountUSD.toFixed(2)}`,
+  };
+}
 
-      if (error) {
-        console.error('Error fetching user balance:', error);
-        return 0;
-      }
+export async function processRealCashout(request: CashoutRequest): Promise<CashoutResponse> {
+  console.log('🚀 PROCESSING REAL CASHOUT:', request);
 
-      return Number(data) || 0;
-    } catch (error) {
-      console.error('Error in getUserBalance:', error);
-      return 0;
+  try {
+    if (USE_SUPABASE) {
+      console.log('Using Supabase edge function for cashout');
+      return await cashoutViaSupabase(request);
     }
-  }
 
-  /**
-   * Get cashout transaction history
-   */
-  async getCashoutHistory(userId: string, limit: number = 50): Promise<any[]> {
-    try {
-      const { data, error } = await supabase
-        .from('real_cashout_requests')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(limit);
-
-      if (error) {
-        console.error('Error fetching cashout history:', error);
-        return [];
-      }
-
-      return data || [];
-    } catch (error) {
-      console.error('Error in getCashoutHistory:', error);
-      return [];
-    }
-  }
-
-  /**
-   * Record ad earnings to user_earnings table
-   */
-  async recordAdEarnings(
-    userId: string,
-    earningType: 'ad_click' | 'ad_impression' | 'offerwall' | 'game_activity',
-    amountUSD: number,
-    adNetwork?: string,
-    metadata?: Record<string, any>
-  ): Promise<boolean> {
-    try {
-      const { error } = await supabase
-        .from('user_earnings')
-        .insert({
-          user_id: userId,
-          earning_type: earningType,
-          amount_usd: amountUSD,
-          ad_network: adNetwork,
-          metadata: metadata || {}
-        });
-
-      if (error) {
-        console.error('Error recording earnings:', error);
-        return false;
-      }
-
-      console.log(`✅ Recorded $${amountUSD} earnings for user ${userId}`);
-      return true;
-    } catch (error) {
-      console.error('Error in recordAdEarnings:', error);
-      return false;
-    }
+    console.log('Using local cashout-server at', CASHOUT_SERVER);
+    return await cashoutViaLocalServer(request);
+  } catch (error) {
+    console.error('❌ Real cashout service error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
   }
 }
 
-export default RealCashoutService;
+export default { processRealCashout };
