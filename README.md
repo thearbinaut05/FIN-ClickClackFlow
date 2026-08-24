@@ -1,22 +1,78 @@
-# FIN-ClickClackFlow - FIN ClickClackFlow
+# FIN-ClickClackFlow
 
-## Project Overview
-This repository has been standardized and made functional for real-world use as part of a comprehensive optimization project.
+Click-to-earn game + real Stripe Connect cashouts.
 
-**Category:** FIN
-**Subcategory:** ClickClackFlow
-**Status:** Production-Ready (Functional Core Implemented)
+## Status
+**Production-ready core** — cashout server runs **without Supabase**. Frontend can use local Node server or optional Supabase edge functions.
 
-## Functionality
-This project implements the core logic for a **ClickClackFlow** system. The placeholder code has been replaced with a functional framework to ensure it is ready for real-world deployment.
+## Quick start
 
-## Management Best Practices
-*   **Dependencies:** Updated and managed via `package.json` or `requirements.txt`.
-*   **Security:** Placeholder for API keys replaced with secure environment variable usage (`.env` file is ignored).
-*   **CI/CD:** *Note: CI/CD workflow files could not be pushed due to GitHub App permission limitations. This should be added manually.*
+```bash
+# 1. Install
+npm install
 
-## Getting Started
-1.  Clone the repository.
-2.  Install dependencies: `npm install` or `pip install -r requirements.txt`.
-3.  Set up environment variables (e.g., `API_KEY`, `DB_URL`).
-4.  Run the application: `npm start` or `python main.py`.
+# 2. Configure
+cp .env.example .env
+# Set at least: STRIPE_SECRET_KEY=sk_test_...
+
+# 3. Run cashout API
+npm run cashout
+# → http://localhost:4000
+
+# 4. Run frontend (another terminal)
+npm run dev
+# → http://localhost:8080 (or Vite's port)
+
+# Or both:
+npm run start:all
+```
+
+## Cashout API
+
+`POST /cashout`
+
+```json
+{
+  "userId": "user_123",
+  "coins": 1000,
+  "payoutType": "email",
+  "email": "you@example.com"
+}
+```
+
+- **100 coins = $1 USD**
+- `payoutType`: `instant_card` | `bank_account` | `email`
+- Card/bank need `accountId` (or `CONNECTED_ACCOUNT_ID` in `.env`)
+
+Health: `GET /health`
+
+## Architecture
+
+| Piece | Role | Requires Supabase? |
+|-------|------|--------------------|
+| `cashout-server.js` | Stripe Connect payouts, logging | **No** |
+| Vite React app | Game UI + dashboards | Optional |
+| `supabase/functions/*` | Edge alternatives | Only if you deploy them |
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Frontend |
+| `npm run cashout` | Stripe cashout server |
+| `npm run start:all` | Both via deploy script |
+| `npm run analytics` | CLI analytics |
+| `npm run build` | Production build |
+
+## Security notes
+
+- Never commit `.env`
+- Use Stripe **test** keys until ready for live
+- A malicious `nodes.js` npm package was removed from dependencies — run a fresh `npm install`
+
+## Related repos
+
+- `FIN-StripeDashboard` — Stripe/lead dashboards
+- `FIN-ClickClackReloaded` — Cashflow UI variant
+- `AI-Hivemind` — Revenue automation UI
+- `submarine-arbitrage-engine` — DeFi arbitrage (separate stack)
