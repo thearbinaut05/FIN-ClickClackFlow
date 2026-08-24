@@ -12,11 +12,15 @@
  * - Adaptive agent to choose payout method with retry and fallback
  * - Uses environment variables for configuration, including connected account ID and port
  * - Robust error handling, request validation middleware, CORS, and logging
+ * - No Supabase dependency (works fully offline from Supabase)
  *
  * Environment Variables:
  * - STRIPE_SECRET_KEY : Your Stripe platform secret key (required)
  * - CONNECTED_ACCOUNT_ID : Default connected Stripe account ID to use for payouts (optional)
- * - PORT : Server port (default 3000)
+ * - PORT : Server port (default 4000)
+ * - USD_API_KEY : API key for external USD endpoints (optional, default 'usd-access-key-2024')
+ * - USD_VERIFICATION_ENABLED : Enable USD calc verification (default true)
+ * - LOG_LEVEL : Winston log level (default 'info')
  *
  * Notes:
  * - Connected Account ID (accountId) can be passed in request body or defaults to CONNECTED_ACCOUNT_ID env.
@@ -81,19 +85,11 @@ const stripe = Stripe(stripeSecretKey);
 const COINS_TO_USD = 100;
 const MAX_RETRIES = 3;
 
-// Supabase configuration for revenue integration
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-  logger.warn('Supabase configuration missing - revenue-sourced payment intents will not be available');
-}
-
 // USD Verification and External Access Configuration
 const USD_VERIFICATION_ENABLED = process.env.USD_VERIFICATION_ENABLED !== 'false';
 const USD_API_KEY = process.env.USD_API_KEY || 'usd-access-key-2024';
 
-// Setup Logger with timestamp & colors
+// Setup Logger with timestamp & colors (MUST be before any logger.* calls)
 const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
   format: winston.format.combine(
@@ -167,8 +163,6 @@ function verifyUSDCalculation(coins, calculatedUSD) {
  */
 async function getUSDSummary() {
   try {
-    // This would normally call the Supabase function, but for simplicity
-    // we'll return a basic summary from the transaction logs
     const transactionsFile = path.join(logsDir, 'transactions.json');
     
     if (!fs.existsSync(transactionsFile)) {
@@ -728,149 +722,6 @@ app.post('/cashout', validateCashoutRequest, async (req, res) => {
   }
 });
 
-// Revenue-sourced payment intent endpoint
-app.post('/create-revenue-payment-intent', validateCashoutRequest, async (req, res) => {
-  const { userId, coins, payoutType, accountId: reqAccountId, email, metadata } = req.body;
-  
-  const amountUSD = coins / COINS_TO_USD;
-  const amountCents = Math.round(amountUSD * 100);
-  
-  logger.info(`Creating revenue-sourced payment intent for user ${userId}: coins=${coins}, amountUSD=$${amountUSD.toFixed(2)}`);
-
-  try {
-    // Call Supabase function to create payment intent from revenue
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/stripe-payment-processor`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({
-        action: 'create_payment_intent',
-        amount: amountCents,
-        currency: 'usd',
-        metadata: {
-          ...metadata,
-          userId,
-          coins,
-          payoutType: payoutType || 'revenue_sourced',
-          created_via: 'cashout_server'
-        }
-      })
-    });
-
-    const result = await response.json();
-
-    if (response.ok && result.id) {
-      logger.info(`Revenue-sourced payment intent created: ${result.id}`);
-      
-      // Automatically attempt to fulfill the payment intent
-      const fulfillResponse = await fetch(`${SUPABASE_URL}/functions/v1/stripe-payment-processor`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-        },
-        body: JSON.stringify({
-          action: 'auto_fulfill_payment_intent',
-          payment_intent_id: result.id
-        })
-      });
-
-      const fulfillResult = await fulfillResponse.json();
-
-      if (fulfillResponse.ok && fulfillResult.status === 'succeeded') {
-        logger.info(`Payment intent auto-fulfilled: ${result.id}`);
-        
-        // Log successful transaction
-        logTransaction({
-          userId,
-          coins,
-          amountUSD,
-          payoutMethod: 'revenue_sourced_payment_intent',
-          status: 'success',
-          details: { payment_intent: result, fulfillment: fulfillResult },
-          metadata
-        });
-
-        res.json({
-          success: true,
-          userId,
-          amountUSD,
-          payoutMethod: 'revenue_sourced_payment_intent',
-          payment_intent: result,
-          fulfillment_status: 'auto_fulfilled',
-          details: fulfillResult
-        });
-      } else {
-        logger.warn(`Payment intent created but auto-fulfillment failed: ${result.id}`);
-        res.json({
-          success: true,
-          userId,
-          amountUSD,
-          payoutMethod: 'revenue_sourced_payment_intent',
-          payment_intent: result,
-          fulfillment_status: 'pending_manual_fulfillment',
-          message: 'Payment intent created from revenue but requires manual fulfillment'
-        });
-      }
-    } else {
-      logger.error(`Failed to create revenue-sourced payment intent: ${result.error || 'Unknown error'}`);
-      res.status(400).json({
-        success: false,
-        error: result.error || 'Failed to create payment intent from revenue'
-      });
-    }
-  } catch (err) {
-    logger.error(`Error creating revenue-sourced payment intent: ${err.message}`);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error creating revenue-sourced payment intent'
-    });
-  }
-});
-
-// Batch process pending payment intents endpoint
-app.post('/process-pending-payment-intents', async (req, res) => {
-  logger.info('Processing pending payment intents from revenue');
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/stripe-payment-processor`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({
-        action: 'process_pending_payment_intents'
-      })
-    });
-
-    const result = await response.json();
-
-    if (response.ok) {
-      logger.info(`Processed ${result.processed_count} pending payment intents`);
-      res.json({
-        success: true,
-        processed_count: result.processed_count,
-        results: result.results
-      });
-    } else {
-      logger.error(`Failed to process pending payment intents: ${result.error || 'Unknown error'}`);
-      res.status(400).json({
-        success: false,
-        error: result.error || 'Failed to process pending payment intents'
-      });
-    }
-  } catch (err) {
-    logger.error(`Error processing pending payment intents: ${err.message}`);
-    res.status(500).json({
-      success: false,
-      error: 'Internal server error processing pending payment intents'
-    });
-  }
-});
-
 // Transaction history endpoint (for admin purposes)
 app.get('/transactions', (req, res) => {
   try {
@@ -908,6 +759,7 @@ app.get('/', (req, res) => {
     <p>Default Connected Account ID from .env: <strong>${DEFAULT_CONNECTED_ACCOUNT_ID || 'Not set'}</strong></p>
     <p>Server Status: <strong>Running</strong></p>
     <p>Logs Directory: <strong>${logsDir}</strong></p>
+    <p>Supabase: <strong>Not required</strong> (removed)</p>
   `);
 });
 
@@ -1015,38 +867,25 @@ app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: '1.1.0',
     stripeConfigured: stripeSecretKey !== 'your_stripe_secret_key_here',
     connectedAccountConfigured: !!DEFAULT_CONNECTED_ACCOUNT_ID,
     usd_verification_enabled: USD_VERIFICATION_ENABLED,
     coins_to_usd_rate: COINS_TO_USD,
-    external_usd_api_enabled: true
+    external_usd_api_enabled: true,
+    supabase: false
   });
 });
 
 /**
- * Aggregate USD from database and trigger payouts
- * This function would typically connect to your database to find all pending USD amounts
+ * Aggregate USD from local transaction logs (no database / Supabase required)
  */
 async function sweepUSDFromDatabase() {
   try {
-    logger.info('Starting USD sweep from database...');
-    
-    // In a real implementation, this would:
-    // 1. Connect to your database using SUPABASE_SERVICE_ROLE_KEY
-    // 2. Query for all accumulated USD amounts that need to be transferred
-    // 3. Aggregate them by user or account
-    // 4. Trigger payouts for each account that has a sufficient balance
-    
-    // For now, we'll create a placeholder implementation
-    // that logs the sweep attempt and could be extended to call your Supabase functions
+    logger.info('Starting USD sweep from local transaction logs...');
     
     const summary = await getUSDSummary();
     logger.info(`USD sweep completed. Current summary: ${JSON.stringify(summary)}`);
-    
-    // Call the USD external API to get pending amounts
-    // This would typically make a request to your Supabase function
-    // Example: fetch to /functions/v1/usd-external-api/summary
     
     return {
       success: true,
@@ -1088,10 +927,7 @@ async function transferToCorrectAccount() {
       if (usdBalance && usdBalance.amount > 0) {
         logger.info(`Found ${usdBalance.amount / 100} USD in wrong account, transferring to correct account`);
         
-        // Create transfer from wrong account to platform, then to correct account
-        // Note: This requires proper permissions and account setup
-        // This is a placeholder for the actual transfer logic
-        
+        // Placeholder for actual transfer logic (requires proper permissions)
         logger.info(`Transfer initiated from wrong account to correct account`);
         return {
           success: true,
@@ -1165,7 +1001,7 @@ app.post('/sweep-usd', async (req, res) => {
 
     res.json({ success: true, transferId: transfer.id, amount: available.amount });
   } catch (err) {
-    console.error('Sweep error:', err);
+    logger.error(`Sweep error: ${err.message}`);
     res.status(500).json({ error: err.message });
   }
 });
@@ -1174,6 +1010,7 @@ app.post('/sweep-usd', async (req, res) => {
 app.listen(PORT, () => {
   logger.info(`Cashout server running on port ${PORT}`);
   logger.info('Ensure your .env file has STRIPE_SECRET_KEY and optionally CONNECTED_ACCOUNT_ID set for live payouts.');
+  logger.info('Supabase is not required — server runs fully without it.');
   
   // Start scheduled USD sweep (every hour)
   setInterval(async () => {
@@ -1183,4 +1020,3 @@ app.listen(PORT, () => {
   
   logger.info('Scheduled USD sweep started (runs every hour)');
 });
-
