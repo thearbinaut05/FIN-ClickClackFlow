@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>USD reconciliation — read only</title><link rel="stylesheet" href="/style.css"><script src="/dashboard.js" type="module"></script></head>
+<body><main><header><h1>USD reconciliation</h1><span class="badge">Read only · No withdrawals</span></header>
+<p class="notice">A database amount is not proof of cash. Provider balances, receivables, internal credits and simulated values must remain separate.</p>
+<p id="message" role="status" aria-live="polite"></p>
+<section id="signin"><h2>Administrator sign-in</h2><p>Use an existing Supabase Auth account whose user ID is explicitly allowlisted. This page creates no users.</p>
+<form id="login"><label>Email<input id="email" type="email" autocomplete="username" required></label><label>Password<input id="password" type="password" autocomplete="current-password" required></label><button id="sign-in">Sign in</button></form></section>
+<section id="dashboard" hidden><div class="toolbar"><button id="refresh">Refresh evidence</button><button id="signout" class="secondary">Sign out</button></div><p id="checked"></p>
+<h2>Provider evidence</h2><div id="provider" class="panel"></div>
+<h2>Database ledger — unverified</h2><p>Raw numeric totals retain database precision. Currency/units must be established from the originating provider. A “completed” or “verified” database label is not independent evidence.</p><div id="ledger"></div>
+<h2>Organization checklist</h2><ol><li>Preserve an authorized backup/export before changing anything.</li><li>Match each real payment to its provider account, mode, currency, units and transaction ID.</li><li>Separate approved receivables, internal credits, simulations and unmatched records.</li><li>Review overly broad write policies and ledger-changing routine permissions separately.</li><li>Enable no payout until funds, ownership and payout eligibility are verified.</li></ol>
+<p class="notice">This dashboard does not change records, run legacy monetization routines, or reconcile individual entries automatically. Other Stripe accounts, banks and affiliate networks require their own evidence.</p></section>
+</main></body></html>
