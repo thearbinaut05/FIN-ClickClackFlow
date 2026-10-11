@@ -1,0 +1,16 @@
+-- TEMPLATE ONLY. Creating roles requires separate deployment/security approval.
+-- Fill a strong password ONLY in a private execution environment; never commit it.
+-- Run after schema.sql. This grants NO access to legacy balances or auth tables.
+CREATE ROLE verified_monetization LOGIN PASSWORD 'REPLACE_ME_WITH_STRONG_RANDOM_PASSWORD';
+GRANT USAGE ON SCHEMA public TO verified_monetization;
+GRANT SELECT,INSERT,UPDATE ON public.monetization_users,public.monetization_events,
+ public.monetization_receipts,public.monetization_subscriptions,
+ public.monetization_withdrawals,public.monetization_partner_receipts TO verified_monetization;
+CREATE POLICY server_access ON public.monetization_users TO verified_monetization USING(true) WITH CHECK(true);
+CREATE POLICY server_access ON public.monetization_events TO verified_monetization USING(true) WITH CHECK(true);
+CREATE POLICY server_access ON public.monetization_receipts TO verified_monetization USING(true) WITH CHECK(true);
+CREATE POLICY server_access ON public.monetization_subscriptions TO verified_monetization USING(true) WITH CHECK(true);
+CREATE POLICY server_access ON public.monetization_withdrawals TO verified_monetization USING(true) WITH CHECK(true);
+CREATE POLICY server_access ON public.monetization_partner_receipts TO verified_monetization USING(true) WITH CHECK(true);
+-- Server authenticates ownership on every seller action. This DB role must stay
+-- server-only; it has neither client credentials nor BYPASSRLS privilege.
