@@ -57,6 +57,18 @@ app.use(helmet()); // Secure HTTP headers
 app.use(cors()); // Enable CORS, can be configured for specific origins
 app.use(express.json()); // Parse JSON request bodies
 
+// Fail closed for legacy money-moving routes. No environment flag bypass.
+// Re-enable only after authenticated ownership, funded ledger reservations,
+// idempotency, provider verification, and settlement reconciliation exist.
+app.use(['/cashout', '/sweep-usd', '/usd-sweep', '/transfer-accounts'], (req, res) => {
+  if (req.method !== 'POST') return res.status(405).json({ success: false, code: 'METHOD_NOT_ALLOWED' });
+  return res.status(503).json({
+    success: false,
+    code: 'UNVERIFIED_PAYOUT_PATH_DISABLED',
+    error: 'Legacy payout route disabled: payment ownership and funded entitlement are not verified.'
+  });
+});
+
 // Rate Limiting Middleware - Limit 100 requests per 15 minutes per IP
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -536,81 +548,11 @@ async function performBankAccountPayout(accountId, amountUSD) {
  * @returns {Promise<Object>}
  */
 async function performEmailPayout(email, amountUSD) {
-  try {
-    if (!email) throw new Error('Email required for email payout simulation.');
-
-    // Check if this is a test environment or if Stripe is unavailable
-    const isTestMode = process.env.NODE_ENV === 'development' || process.env.MOCK_MODE === 'true';
-    
-    if (isTestMode) {
-      // Mock successful payout for development/testing
-      const mockPaymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      logger.info(`Mock email payout successful: paymentIntentId=${mockPaymentIntentId}, email=${email}, amount=$${amountUSD.toFixed(2)}`);
-      
-      return {
-        success: true,
-        message: `Mock PaymentIntent created to email ${email} (Development Mode)`,
-        paymentIntentId: mockPaymentIntentId,
-        mockMode: true,
-        details: {
-          id: mockPaymentIntentId,
-          amount: Math.round(amountUSD * 100),
-          currency: 'usd',
-          status: 'succeeded',
-          receipt_email: email,
-          description: `Mock cashout payout to email ${email}`
-        }
-      };
-    }
-
-    // Try real Stripe payment intent
-    try {
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: Math.round(amountUSD * 100),
-        currency: 'usd',
-        payment_method_types: ['card'],
-        receipt_email: email,
-        description: `Cashout simulated payout to email ${email}`,
-      });
-
-      // Log the successful payout details
-      logger.info(`Email payout successful: paymentIntentId=${paymentIntent.id}, email=${email}, amount=$${amountUSD.toFixed(2)}`);
-
-      return {
-        success: true,
-        message: `PaymentIntent created to email ${email}`,
-        paymentIntentId: paymentIntent.id,
-        details: paymentIntent
-      };
-    } catch (stripeError) {
-      // If Stripe fails, fall back to mock mode
-      logger.warn(`Stripe connection failed, using mock mode: ${stripeError.message}`);
-      
-      const mockPaymentIntentId = `pi_fallback_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      logger.info(`Fallback mock email payout: paymentIntentId=${mockPaymentIntentId}, email=${email}, amount=$${amountUSD.toFixed(2)}`);
-      
-      return {
-        success: true,
-        message: `Fallback PaymentIntent created to email ${email} (Stripe Unavailable)`,
-        paymentIntentId: mockPaymentIntentId,
-        mockMode: true,
-        fallbackMode: true,
-        details: {
-          id: mockPaymentIntentId,
-          amount: Math.round(amountUSD * 100),
-          currency: 'usd',
-          status: 'succeeded',
-          receipt_email: email,
-          description: `Fallback cashout payout to email ${email}`
-        }
-      };
-    }
-  } catch (error) {
-    logger.error(`Email payout failed: ${error.message}`);
-    return { success: false, error: error.message || 'Email payout simulation failed' };
-  }
+  return {
+    success: false,
+    error: 'Email receipts are not payouts. Use a verified, authenticated bank payout integration.',
+    code: 'EMAIL_PAYOUT_UNSUPPORTED'
+  };
 }
 
 // Onboarding link endpoint for adding payment methods
