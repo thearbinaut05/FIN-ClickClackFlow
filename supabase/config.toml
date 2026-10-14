@@ -1,7 +1,7 @@
 project_id = "tqbybefpnwxukzqkanip"
 
 [functions.cashout]
-verify_jwt = false
+verify_jwt = true
 
 [functions.stripe-webhook]
 verify_jwt = false
@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.financial-failsafe-system]
 verify_jwt = false
+
+[functions.autopilot-cashout]
+verify_jwt = true
