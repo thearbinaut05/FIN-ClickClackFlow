@@ -70,6 +70,16 @@ Health: `GET /health`
 - Use Stripe **test** keys until ready for live
 - A malicious `nodes.js` npm package was removed from dependencies — run a fresh `npm install`
 
+## Support This Project
+
+If FIN-ClickClackFlow is useful to you, please consider supporting its development:
+
+- ⭐ Star this repository to help others discover it
+- 💖 Sponsor via the **Sponsor** button on this repo, or at [github.com/sponsors/thearbinaut05](https://github.com/sponsors/thearbinaut05)
+- 🐛 Report bugs and request features in [Issues](https://github.com/thearbinaut05/FIN-ClickClackFlow/issues)
+
+Sponsorship helps fund hosting, Stripe testing, and continued development. Thank you!
+
 ## Related repos
 
 - `FIN-StripeDashboard` — Stripe/lead dashboards
