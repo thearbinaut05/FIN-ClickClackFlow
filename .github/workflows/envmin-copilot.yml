@@ -1,0 +1,12 @@
+name: env-min-probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  t:
+    runs-on: ubuntu-latest
+    environment:
+      name: copilot
+    steps:
+      - run: echo "ok env=copilot run=$GITHUB_RUN_ID"
