@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { GameProvider } from '@/contexts/GameContext';
 import GameHeader from '@/components/game/GameHeader';
@@ -24,6 +23,7 @@ import { RevenueMetricsPanel } from '@/components/dashboard/RevenueMetricsPanel'
 import { CampaignsPanel } from '@/components/dashboard/CampaignsPanel';
 import { WorkerPoolPanel } from '@/components/dashboard/WorkerPoolPanel';
 import { ComprehensiveUSDPanel } from '@/components/dashboard/ComprehensiveUSDPanel';
+import SponsoredPPCPanel from '@/components/game/SponsoredPPCPanel';
 import { useRealtimeConnection } from "@/hooks/useRealtimeConnection";
 import { motion } from 'framer-motion';
 
@@ -111,6 +111,9 @@ const Index = () => {
             
             {/* Top Priority - Comprehensive USD Overview */}
             <ComprehensiveUSDPanel />
+
+            {/* Sponsored PPC + OGAds GPT - funds click-to-earn */}
+            <SponsoredPPCPanel />
             
             {/* Fund Access & Revenue Metrics */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
