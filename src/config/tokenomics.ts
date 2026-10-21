@@ -18,6 +18,15 @@ export const TOKENOMICS = {
     userShare: 0.8,
     ownerShare: 0.2,
   },
+  sponsorStripe: {
+    productName: 'ClickClack Flow — Sponsored Placement Starter',
+    productId: 'prod_VTlMECsqMN4zN8',
+    priceId: 'price_1USnq7DWu650RN3ogjdn5rNC',
+    paymentLinkId: 'plink_1USnqCDWu650RN3oWz9eKgBL',
+    paymentLinkUrl: 'https://buy.stripe.com/4gM8wPaOE0QE6sO9qPdIA0r',
+    starterUsd: 25,
+    currency: 'USD',
+  },
   ogadsGpt: {
     siteName: 'ClickClack Flow',
     status: 'Draft',
@@ -44,6 +53,14 @@ export function getOgadsGptSiteUrl(): string {
     env.VITE_OGADS_GPT_SITE_URL ||
     env.VITE_SPONSOR_PPC_URL ||
     TOKENOMICS.ogadsGpt.toolUrl
+  );
+}
+
+export function getStripeSponsorPaymentLinkUrl(): string {
+  const env = import.meta.env as Record<string, string | undefined>;
+  return (
+    env.VITE_STRIPE_SPONSOR_PAYMENT_LINK ||
+    TOKENOMICS.sponsorStripe.paymentLinkUrl
   );
 }
 
