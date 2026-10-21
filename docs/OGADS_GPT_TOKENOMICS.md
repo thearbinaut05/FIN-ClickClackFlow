@@ -4,6 +4,7 @@ Course: OGAds GPT Builder (Course 33) — Creating a Site / Customization With C
 Tool: https://members.ogads.com/tools/gpt-sites
 Monday REQUEST: https://thearbinaut05s-team.monday.com/boards/18435783282/pulses/13342067840
 Monday RETURN: https://thearbinaut05s-team.monday.com/boards/18435782728/pulses/13342084299
+App: https://click-clack-cash-flow.onrender.com
 
 ## OGAds GPT site (created)
 - Name: ClickClack Flow
@@ -12,6 +13,13 @@ Monday RETURN: https://thearbinaut05s-team.monday.com/boards/18435782728/pulses/
 - Currency: USD, Margin: 20% (user 80%), Minimum cashout: $5, Payment terms: Net 7, Theme: Arcade
 - Total users at creation: 0, Lifetime earnings at creation: 0.00 USD
 
+## Stripe Sponsored Placement (live offer)
+- Product: ClickClack Flow — Sponsored Placement Starter (`prod_VTlMECsqMN4zN8`)
+- Price: $25 one-time USD (`price_1USnq7DWu650RN3ogjdn5rNC`)
+- Payment Link: https://buy.stripe.com/4gM8wPaOE0QE6sO9qPdIA0r (`plink_1USnqCDWu650RN3oWz9eKgBL`)
+- Placement: `SponsoredPPCPanel` via `VITE_STRIPE_SPONSOR_PAYMENT_LINK` (fallback in `src/config/tokenomics.ts`)
+- A sale counts only after a completed Stripe payment; creating the link is not revenue.
+
 ## How it is connected
 User taps in ClickClackFlow -> GameContext records ad impression/PPC every 10 taps ->
 SponsoredPPCPanel sponsored interaction -> SponsoredPPCService.recordSponsoredClick()
@@ -19,6 +27,7 @@ SponsoredPPCPanel sponsored interaction -> SponsoredPPCService.recordSponsoredCl
 coins accumulate -> sinks (upgrades, NFT boosters, shop) burn coins ->
 cashout burns 500+ coins -> cashout-server.js -> Stripe Connect ($5 minimum).
 OGAds GPT offers fund larger earnings at 20% site margin.
+Sponsors fund the pool by buying the Stripe Sponsored Placement Starter above.
 Monday receives the returns: GPT URL/status, total users, lifetime earnings,
 sponsor revenue, coins issued/cashed out.
 
@@ -32,6 +41,7 @@ sponsor revenue, coins issued/cashed out.
 ## Env
 Set VITE_OGADS_GPT_SITE_URL to the live GPT site URL once OGAds assigns a domain, then redeploy.
 Without it, the panel falls back to the OGAds GPT Sites tool URL.
+Set VITE_STRIPE_SPONSOR_PAYMENT_LINK to the Stripe Payment Link above on Render.
 
 ## Known follow-ups
 1. OGAds: set domain/publish the Draft site, add payout method + FAQ + branding text, then return the live URL to Monday.
