@@ -1,384 +1,120 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery } from "@tanstack/react-query";
-import { DollarSign, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, Clock } from "lucide-react";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Wallet, ShieldCheck, Clock } from "lucide-react";
 
-interface USDSource {
-  source: string;
-  available: number;
-  pending: number;
-  total: number;
-  status: string;
-  lastUpdated?: string;
-}
+const formatUSD = (value: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+
+const formatDate = (value?: string | null) =>
+  value ? new Date(value).toLocaleString() : "Not recorded";
 
 export const ComprehensiveUSDPanel = () => {
-  // Application Balance
-  const { data: appBalance } = useQuery({
-    queryKey: ['app-balance'],
+  const balanceQuery = useQuery({
+    queryKey: ["provider-verified-stripe-balance"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('application_balance')
-        .select('*')
-        .limit(1)
-        .single();
-      return data;
-    }
+        .from("usd_balance_real_time")
+        .select("balance_type, amount_usd, source_system, verification_status, last_verification")
+        .eq("source_system", "stripe")
+        .eq("verification_status", "verified")
+        .order("last_verification", { ascending: false });
+
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
-  // Autonomous Revenue Transfers
-  const { data: revenueTransfers } = useQuery({
-    queryKey: ['revenue-transfers'],
+  const paymentsQuery = useQuery({
+    queryKey: ["provider-reconciled-stripe-payments"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('autonomous_revenue_transfers')
-        .select('amount, status, created_at');
-      return data || [];
-    }
+        .from("unified_stripe_transactions")
+        .select("amount, net_amount, currency, status, reconciled, created_at")
+        .eq("reconciled", true)
+        .eq("status", "succeeded")
+        .eq("currency", "usd")
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      if (error) throw error;
+      return data ?? [];
+    },
   });
 
-  // Bank Transfers
-  const { data: bankTransfers } = useQuery({
-    queryKey: ['bank-transfers-all'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('bank_transfers')
-        .select('amount, status, created_at, net_amount');
-      return data || [];
+  const balances = balanceQuery.data ?? [];
+  const latestVerification = balances.reduce<string | null>((latest, row) => {
+    if (!row.last_verification) return latest;
+    if (!latest || new Date(row.last_verification).getTime() > new Date(latest).getTime()) {
+      return row.last_verification;
     }
-  });
+    return latest;
+  }, null);
+  const fresh = Boolean(
+    latestVerification && Date.now() - new Date(latestVerification).getTime() < 24 * 60 * 60 * 1000,
+  );
+  const available = balances.find((row) => row.balance_type === "available");
+  const pending = balances.find((row) => row.balance_type === "pending");
+  const payments = paymentsQuery.data ?? [];
+  const netReceipts = payments.reduce(
+    (sum, payment) => sum + Number(payment.net_amount ?? payment.amount ?? 0),
+    0,
+  );
 
-  // Balance Transfers
-  const { data: balanceTransfers } = useQuery({
-    queryKey: ['balance-transfers-all'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('balance_transfers')
-        .select('amount, status, created_at');
-      return data || [];
-    }
-  });
-
-  // Stripe Transfers
-  const { data: stripeTransfers } = useQuery({
-    queryKey: ['stripe-transfers'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('stripe_transfers')
-        .select('amount, status, created_at');
-      return data || [];
-    }
-  });
-
-  // Cash Out Requests
-  const { data: cashOutRequests } = useQuery({
-    queryKey: ['cashout-requests-all'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cash_out_requests')
-        .select('amount, status, created_at');
-      return data || [];
-    }
-  });
-
-  // Real-time USD Balance
-  const { data: realtimeUSD } = useQuery({
-    queryKey: ['realtime-usd'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('usd_balance_real_time')
-        .select('*');
-      return data || [];
-    }
-  });
-
-  // Consolidated Amounts
-  const { data: consolidatedAmounts } = useQuery({
-    queryKey: ['consolidated-amounts'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('consolidated_amounts')
-        .select('*');
-      return data || [];
-    }
-  });
-
-  // Autopilot Config
-  const { data: autopilotConfig } = useQuery({
-    queryKey: ['autopilot-config'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('autopilot_config')
-        .select('*')
-        .limit(1)
-        .single();
-      return data;
-    }
-  });
-
-  // Revenue Transfer Logs
-  const { data: transferLogs } = useQuery({
-    queryKey: ['transfer-logs'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('autonomous_revenue_transfer_logs')
-        .select('amount, status, created_at');
-      return data || [];
-    }
-  });
-
-  // Calculate aggregated USD sources
-  const calculateUSDSources = (): USDSource[] => {
-    const sources: USDSource[] = [];
-
-    // Application Balance
-    if (appBalance) {
-      sources.push({
-        source: 'Application Balance',
-        available: Number(appBalance.balance_amount || 0),
-        pending: Number(appBalance.pending_transfers || 0),
-        total: Number(appBalance.balance_amount || 0) + Number(appBalance.pending_transfers || 0),
-        status: 'active',
-        lastUpdated: appBalance.last_updated_at
-      });
-    }
-
-    // Revenue Transfers
-    if (revenueTransfers && revenueTransfers.length > 0) {
-      const completed = revenueTransfers
-        .filter(t => t.status === 'completed')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-      const pending = revenueTransfers
-        .filter(t => t.status === 'pending')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-      
-      sources.push({
-        source: 'Revenue Transfers',
-        available: completed,
-        pending: pending,
-        total: completed + pending,
-        status: 'active'
-      });
-    }
-
-    // Bank Transfers
-    if (bankTransfers && bankTransfers.length > 0) {
-      const completed = bankTransfers
-        .filter(t => t.status === 'completed')
-        .reduce((sum, t) => sum + Number(t.net_amount || t.amount || 0), 0);
-      const pending = bankTransfers
-        .filter(t => t.status === 'pending')
-        .reduce((sum, t) => sum + Number(t.net_amount || t.amount || 0), 0);
-      
-      sources.push({
-        source: 'Bank Transfers',
-        available: completed,
-        pending: pending,
-        total: completed + pending,
-        status: 'active'
-      });
-    }
-
-    // Stripe Transfers
-    if (stripeTransfers && stripeTransfers.length > 0) {
-      const completed = stripeTransfers
-        .filter(t => t.status === 'succeeded' || t.status === 'paid')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-      const pending = stripeTransfers
-        .filter(t => t.status === 'pending')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-      
-      sources.push({
-        source: 'Stripe Transfers',
-        available: completed,
-        pending: pending,
-        total: completed + pending,
-        status: 'active'
-      });
-    }
-
-    // Real-time USD Balance
-    if (realtimeUSD && realtimeUSD.length > 0) {
-      const available = realtimeUSD
-        .filter(u => u.balance_type === 'available')
-        .reduce((sum, u) => sum + Number(u.amount_usd || 0), 0);
-      const pending = realtimeUSD
-        .filter(u => u.balance_type === 'pending')
-        .reduce((sum, u) => sum + Number(u.amount_usd || 0), 0);
-      
-      sources.push({
-        source: 'Real-time USD Balance',
-        available: available,
-        pending: pending,
-        total: available + pending,
-        status: 'active'
-      });
-    }
-
-    // Consolidated Amounts
-    if (consolidatedAmounts && consolidatedAmounts.length > 0) {
-      const ready = consolidatedAmounts
-        .filter(c => c.status === 'ready_for_transfer')
-        .reduce((sum, c) => sum + Number(c.total_usd || 0), 0);
-      const transferred = consolidatedAmounts
-        .filter(c => c.status === 'transferred')
-        .reduce((sum, c) => sum + Number(c.total_usd || 0), 0);
-      
-      sources.push({
-        source: 'Consolidated Funds',
-        available: ready,
-        pending: 0,
-        total: ready + transferred,
-        status: 'active'
-      });
-    }
-
-    // Transfer Logs (successful)
-    if (transferLogs && transferLogs.length > 0) {
-      const successful = transferLogs
-        .filter(t => t.status === 'success' || t.status === 'completed')
-        .reduce((sum, t) => sum + Number(t.amount || 0), 0);
-      
-      sources.push({
-        source: 'Transfer Logs (Processed)',
-        available: successful,
-        pending: 0,
-        total: successful,
-        status: 'completed'
-      });
-    }
-
-    return sources;
+  const balanceText = (row?: (typeof balances)[number]) => {
+    if (balanceQuery.isError) return "Unavailable";
+    if (!fresh || !row) return "Not currently verified";
+    return formatUSD(Number(row.amount_usd));
   };
-
-  const usdSources = calculateUSDSources();
-  const totalAvailable = usdSources.reduce((sum, s) => sum + s.available, 0);
-  const totalPending = usdSources.reduce((sum, s) => sum + s.pending, 0);
-  const grandTotal = totalAvailable + totalPending;
-
-  // Cash Out Statistics
-  const totalCashedOut = autopilotConfig?.total_amount_cashed_out || 0;
-  const totalCashOuts = autopilotConfig?.total_cashouts || 0;
 
   return (
     <Card className="bg-card/50 backdrop-blur border-border">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Wallet className="h-5 w-5" />
-          Comprehensive USD Overview
-        </CardTitle>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            Verified USD Position
+          </CardTitle>
+          <Badge variant={fresh ? "default" : "outline"}>
+            {fresh ? "Current Stripe check" : "Verification stale"}
+          </Badge>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-6">
-        {/* Total Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="p-4 rounded-lg bg-green-500/10 border border-green-500/30">
-            <div className="flex items-center gap-2 text-green-300 text-sm mb-1">
-              <DollarSign className="h-4 w-4" />
-              Total Available
-            </div>
-            <div className="text-3xl font-bold text-green-400">
-              ${totalAvailable.toFixed(2)}
-            </div>
+      <CardContent className="space-y-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="rounded-lg bg-muted/30 p-4">
+            <p className="text-xs text-muted-foreground">Stripe available</p>
+            <p className="mt-1 text-xl font-bold">{balanceText(available)}</p>
           </div>
-          
-          <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-            <div className="flex items-center gap-2 text-yellow-300 text-sm mb-1">
-              <Clock className="h-4 w-4" />
-              Pending
-            </div>
-            <div className="text-3xl font-bold text-yellow-400">
-              ${totalPending.toFixed(2)}
-            </div>
+          <div className="rounded-lg bg-muted/30 p-4">
+            <p className="text-xs text-muted-foreground">Stripe pending</p>
+            <p className="mt-1 text-xl font-bold">{balanceText(pending)}</p>
           </div>
-          
-          <div className="p-4 rounded-lg bg-blue-500/10 border border-blue-500/30">
-            <div className="flex items-center gap-2 text-blue-300 text-sm mb-1">
-              <TrendingUp className="h-4 w-4" />
-              Grand Total
-            </div>
-            <div className="text-3xl font-bold text-blue-400">
-              ${grandTotal.toFixed(2)}
-            </div>
-          </div>
-
-          <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/30">
-            <div className="flex items-center gap-2 text-purple-300 text-sm mb-1">
-              <ArrowDownCircle className="h-4 w-4" />
-              Cashed Out
-            </div>
-            <div className="text-3xl font-bold text-purple-400">
-              ${totalCashedOut.toFixed(2)}
-            </div>
-            <div className="text-xs text-muted-foreground mt-1">
-              {totalCashOuts} transactions
-            </div>
+          <div className="rounded-lg bg-muted/30 p-4">
+            <p className="flex items-center gap-1 text-xs text-muted-foreground">
+              <ShieldCheck className="h-3 w-3" /> Reconciled net receipts
+            </p>
+            <p className="mt-1 text-xl font-bold">
+              {paymentsQuery.isError ? "Unavailable" : formatUSD(netReceipts)}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {paymentsQuery.isError ? "Ledger unavailable" : `${payments.length} verified payments`}
+            </p>
           </div>
         </div>
-
-        {/* Progress Visualization */}
-        <div>
-          <div className="flex justify-between text-sm mb-2">
-            <span>Available / Total</span>
-            <span>{grandTotal > 0 ? ((totalAvailable / grandTotal) * 100).toFixed(1) : 0}%</span>
-          </div>
-          <Progress value={grandTotal > 0 ? (totalAvailable / grandTotal) * 100 : 0} className="h-3" />
-        </div>
-
-        {/* Detailed Breakdown Table */}
-        <div>
-          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-            <ArrowUpCircle className="h-4 w-4" />
-            USD Sources Breakdown
-          </h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Source</TableHead>
-                <TableHead className="text-right">Available</TableHead>
-                <TableHead className="text-right">Pending</TableHead>
-                <TableHead className="text-right">Total</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {usdSources.map((source, index) => (
-                <TableRow key={index}>
-                  <TableCell className="font-medium">{source.source}</TableCell>
-                  <TableCell className="text-right text-green-600 font-semibold">
-                    ${source.available.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="text-right text-yellow-600">
-                    ${source.pending.toFixed(2)}
-                  </TableCell>
-                  <TableCell className="text-right font-semibold">
-                    ${source.total.toFixed(2)}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={source.status === 'active' ? 'default' : 'secondary'}>
-                      {source.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-              <TableRow className="bg-muted/50 font-bold">
-                <TableCell>TOTAL</TableCell>
-                <TableCell className="text-right text-green-600">
-                  ${totalAvailable.toFixed(2)}
-                </TableCell>
-                <TableCell className="text-right text-yellow-600">
-                  ${totalPending.toFixed(2)}
-                </TableCell>
-                <TableCell className="text-right">
-                  ${grandTotal.toFixed(2)}
-                </TableCell>
-                <TableCell>-</TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
+        <p className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          {balanceQuery.isLoading
+            ? "Checking Stripe balance…"
+            : balanceQuery.isError
+              ? "Stripe balance verification could not be read."
+              : `Last Stripe balance verification: ${formatDate(latestVerification)}`}
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Historical application balances, modeled revenue metrics, and internal transfer logs are excluded
+          from spendable cash. A database transfer row is not proof of a Stripe payout.
+        </p>
       </CardContent>
     </Card>
   );

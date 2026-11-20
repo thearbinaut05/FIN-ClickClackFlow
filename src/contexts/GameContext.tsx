@@ -96,55 +96,15 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   // Counter for glitch mode opportunity
   const [glitchCounter, setGlitchCounter] = useState(0);
   
-  // Track application balance from autonomous revenue
-  const [applicationBalance, setApplicationBalance] = useState(0);
-  
-  // Initialize ad monetization service
+  // Ad events are non-monetizing until a provider confirms and settles them.
   const [adMonetizationService] = useState(() => AdMonetizationService.getInstance());
-  
-  // Sync coins with autonomous revenue from application balance
-  useEffect(() => {
-    const syncWithApplicationBalance = async () => {
-      try {
-        const response = await fetch('https://tqbybefpnwxukzqkanip.supabase.co/rest/v1/application_balance?id=eq.1', {
-          headers: {
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxYnliZWZwbnd4dWt6cWthbmlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgzNjAyMDMsImV4cCI6MjA2MzkzNjIwM30.trGBxEF0wr4S_4gBteqV_TuWcIEMbzfDJiA1lga6Yko',
-            'Accept': 'application/json'
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data && data.length > 0) {
-            const balance = data[0].balance_amount;
-            setApplicationBalance(balance);
-            // Convert autonomous revenue to game coins (1 USD = 100 coins)
-            const autonomousCoins = Math.floor(balance * 100);
-            if (autonomousCoins > coins) {
-              setCoins(autonomousCoins);
-            }
-          }
-        }
-      } catch (error) {
-        console.log('Could not sync with application balance:', error);
-      }
-    };
-    
-    // Initial sync
-    syncWithApplicationBalance();
-    
-    // Sync every 30 seconds
-    const syncInterval = setInterval(syncWithApplicationBalance, 30000);
-    
-    return () => clearInterval(syncInterval);
-  }, [coins]);
-  
+
   // Handle tap/click
   const handleTap = () => {
     setTapCount(prev => {
       const newTapCount = prev + 1;
       // Exponential gain logic, tied to real user action
-      setCoins(coins + Math.pow(BASE_EXPONENTIAL_GAIN, newTapCount));
+      setCoins(prev => prev + clickPower);
       return newTapCount;
     });
     
@@ -364,7 +324,7 @@ export const GameProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const cashOut = async (email: string, method: string = DEFAULT_CASHOUT_METHOD): Promise<string> => {
     // Validate minimum cash out amount - only check clicker game coins
     if (coins < 500) {
-      throw new Error("You need at least 500 coins ($5) from the clicker game to cash out");
+      throw new Error("Cashouts are disabled: game points and local ad estimates are not provider-settled earnings.");
     }
     
     // Calculate cash value
